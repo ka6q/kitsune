@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Simulate redaction and tokenization --//Shri 241118
+# Select a percent of the tokens,
+# Replace with a random string of comparable length.
+# Note: 100% redaction is essentially what is also called tokenization.
+
+# Representation 1: original data
+# Representation 2: tokenized data (data replaced by a random number)
+# Representation 3: above tokenized data enriched, simulated by rounding.
+# Representation 4: original data with some spelling enrichments
+# 
+# For the purposes of this demo, Representation 1 is assumed privileged
+# and compressed and encrypted separately. Representations 2 through 4 are
+# assumed in the same lower privilege of access, and are compressed together.
+
+# Reconstitute redacted dictionary. Needed only for decompress, not for stats.
+#(head .. ; tail .. | perl .. ) | sort -n | cut -f2- | gzip
+
+cat -n $1 | sed 's/^ *//' | shuf > $1.shuf
+ORIG=$(bzcat ../test/silesia/webster.bz2 | wc -c)
+DICT=$(wc -l < "$1")
+
+for PCT in 5 10 20 40 80 100
+do
+  for REP in 2 3 4
+  do
+    echo -n "reps=$REP redact=$PCT% "
+    ( echo -n "$REP * $ORIG /( "
+      # Rep 1:
+      bzcat ../test/silesia/webster.bz2 | gzip | wc -c | tr '\012' +
+      # Rep 2..4:
+      ( head -$(( $DICT * ( 100 - $PCT ) / 100 )) $1.shuf
+        case "$REP" in
+        (2) tail +$(( 1 + $DICT * ( 100 - $PCT ) / 100 )) $1.shuf \
+          | perl -pe '
+            s/^ *([0-9]*)\t(.*)$/$1 ."\t".
+              sprintf("%.0f", rand((10**(length($2)-1))))/e;'
+          ;;
+        (3) tail +$(( 1 + $DICT * ( 100 - $PCT ) / 100 )) $1.shuf \
+          | perl -pe '
+            s/^ *([0-9]*)\t(.*)$/
+              $o1 = $1;
+              $o2 = $2;
+              $rep2 = sprintf("%.0f", rand((10**(length($o2)-1))));
+              $rep3 = sprintf("%.0f", $rep2\/1000);
+              $o1 . "\t" . $rep2 . "\t" . $rep3/e;'
+          ;;
+        (4) tail +$(( 1 + $DICT * ( 100 - $PCT ) / 100 )) $1.shuf \
+          | perl -pe '
+            s/^ *([0-9]*)\t(.*)$/
+              $o1 = $1;
+              $o2 = $2;
+              $rep2 = sprintf("%.0f", rand((10**(length($o2)-1))));
+              $rep3 = sprintf("%.0f", $rep2\/1000);
+              $rep4 = $2;
+              $rep4 =~ y[A-Z][a-z];
+              $rep4 =~ s(<[^>]*>)()g; $rep4 =~ s([^a-z])( )gc;
+              $o1 . "\t" . $rep2 . "\t" . $rep3 . "\t" . $rep4/e;'
+          ;;
+        esac
+      ) | sort -n | cut -f2- | gzip | wc -c | tr '\012' +
+      cat ../tmp/sample.kz | wc -c | tr '\012' ')'
+      echo
+    ) | bash -c 'BC_ENV_ARGS=<(echo scale=2) bc' | sed 's/$/x/'
+    #) | tee /dev/tty | bash -c 'BC_ENV_ARGS=<(echo scale=2) bc'
+  done
+  echo
+done
+

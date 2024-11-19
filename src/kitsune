@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+import compress
+import decompress
+import sys
+from huffman import HuffmanCoding
+
+hfm = HuffmanCoding()
+
+# Notes: Unlike traditional compression/decompession algorithms
+# which operate on a simple stream of bytes as input, anisotropic
+# compression is delayered with the parser. Therefore it operates
+# on a stream of parse tokens. Consequently, the decompression is a
+# series of tokens. The ETL parser and columnar file format. eg.
+# Paraquet, will control the nature of this tokenization
+
+print("Compress")
+with open(sys.argv[1], "wb") as gzouta, open(sys.argv[1]+"d", "wb") as gzdict:
+  compress.compress(hfm, sys.stdin, gzouta, gzdict, compress.parse_words)
+
+print("Decompress")
+decompress.decompress(hfm, sys.argv[1], sys.stdout)
+
